@@ -1,0 +1,542 @@
+<html>
+    <head>
+        <title>Bacara: an asynchronous genome browser.</title>
+        <style>
+
+            div.header {
+                text-align:center;
+            }
+
+            div.browser {
+                padding-top: 0px;
+                margin-top: 20px;
+                margin-bottom: 10px;
+                clear: both;
+            }
+
+            span#genomeBrowser { //a trick to avoid double-click text selection (see http://goo.gl/zq2mU);
+                -webkit-user-select: none; // webkit (safari, chrome) browsers
+                -moz-user-select: none; // mozilla browsers
+                -khtml-user-select: none; // webkit (konqueror) browsers
+            }
+
+            div.data {
+                padding-top: 50px;              
+                width:1200px;
+                margin:auto;            
+            }
+
+            div.expression-files {
+                width:1200px;
+                margin:auto; 
+                -webkit-user-select: none; // webkit (safari, chrome) browsers
+                -moz-user-select: none; // mozilla browsers
+                -khtml-user-select: none; // webkit (konqueror) browsers
+                font: 10px sans-serif;
+                text-align: left;
+                padding: 10px;
+            }
+
+            div.expression-levels {
+                width:1200px;
+                margin:auto; 
+                -webkit-user-select: none; // webkit (safari, chrome) browsers
+                -moz-user-select: none; // mozilla browsers
+                -khtml-user-select: none; // webkit (konqueror) browsers
+                font: 10px sans-serif;
+                text-align: right;
+                padding: 10px;
+                color: white;
+            }
+
+            .bar {
+              stroke: white;
+              fill: steelblue;
+            }
+
+            table {
+                margin-top: 100px;
+            }
+
+            div#annotations-table {
+                line-height: 1.5em;
+                width:1200px;
+                margin-top:20px;
+                border-style:solid;
+                border-width: 1px;
+                -webkit-user-select: none; // webkit (safari, chrome) browsers
+                -moz-user-select: none; // mozilla browsers
+                -khtml-user-select: none; // webkit (konqueror) browsers
+            }
+
+            .ui-menu { 
+                width: 300px            
+            }
+
+            fieldset { 
+                padding:0; 
+                border:0; 
+                margin-top:25px; 
+            }
+
+            fieldset label, fieldset input { 
+                display:block; 
+            }
+
+            fieldset input.text { 
+                margin-bottom:12px; 
+                width:95%; 
+                padding: .4em; 
+            }
+
+            #annotations-table {
+                font-size:12px;
+            }
+        </style>
+        <link href="{{ static_url("css/humanity/jquery-ui-1.10.4.custom.css")}}" rel="stylesheet" type="text/css" />
+        <link href="{{ static_url("css/jquery.dataTables.css")}}" rel="stylesheet" type="text/css" />
+        <script type="text/javascript" src="{{ static_url("js/jquery-1.10.2.js")}}"></script>
+        <script type="text/javascript" src="{{ static_url("js/jquery-ui-1.10.4.custom.js")}}"></script>
+        <script src="{{ static_url("js/raphael-min.js")}}"></script>
+        <script src="{{ static_url("js/genome_browser.js")}}"></script>
+        <script src="{{ static_url("js/jquery.dataTables.js")}}"></script>
+
+        <script type="text/javascript" >
+
+            var genomeBrowser = undefined;
+            var current_project = undefined;
+            if ("WebSocket" in window) {
+                console.log("WebSocket is supported by your Browser!");
+                var ws = new WebSocket("ws://localhost:8888/websocket");
+                ws.onopen = function() {
+                    console.log("Connection is opened...");
+                };
+                
+                ws.onclose = function() { 
+                    console.log("Connection is closed...");
+                };
+
+                ws.onmessage = function (evt) {
+                    var received_msg = JSON.parse(evt.data);
+                    if (received_msg['header'] == 'got available projects') {
+                        $("#available_projects").empty();
+                        received_msg['projects'].forEach(function(project) {
+                            $("#available_projects").append($('<option>', { 
+                                value: project,
+                                text : project 
+                            }));
+                        });
+                        $( "#choose-project" ).dialog( "open" );
+                    }          
+                    
+                    else if (received_msg['header'] == 'got all annotations' || received_msg['header'] == 'project created') {
+                        var data = [];
+                        received_msg['annotations'].forEach(function(annotation) {
+                            var center = Math.round((annotation.genomicPositions[0]+annotation.genomicPositions[1])/2);
+                            var product = annotation.product;
+                            if (product == undefined)
+                                product =  annotation.note;   
+                            if (product == undefined)
+                                product =  "Unknown";
+                            data.push([
+                                annotation.organism,
+                                annotation.genomeName,
+                                annotation.class,
+                                product,
+                                annotation.genomicPositions[0],
+                                annotation.genomicStrand,
+                                annotation.genomicPositions[1]-annotation.genomicPositions[0]+1,
+                                ' <center><input type="submit" value="Show" onclick=\'getAnnotationsPerGenome(\"'+annotation.genome.split('@')[0]
+                                    +'\", \"'+center+'\", \"'+annotation._id+'\");\'/></center>']);
+                        });
+                        $('#annotations-table').dataTable().fnAddData(data);
+                        $( "#progressbar" ).progressbar( "option", "value", 0 );
+                        if (received_msg['header'] == 'project created') {
+                            current_project = received_msg['project'];
+                        }
+                    }
+
+                    else if (received_msg['header'] == 'data added') {
+                        var data = [];
+                        received_msg['annotations'].forEach(function(annotation) {
+                            var center = Math.round((annotation.genomicPositions[0]+annotation.genomicPositions[1])/2);
+                            var product = annotation.product;
+                            if (product == undefined)
+                                product =  annotation.note;   
+                            if (product == undefined)
+                                product =  "Unknown";
+                            data.push([
+                                annotation.organism,
+                                annotation.genomeName,
+                                annotation.class,
+                                product,
+                                annotation.genomicPositions[0],
+                                annotation.genomicStrand,
+                                annotation.genomicPositions[1]-annotation.genomicPositions[0]+1,
+                                ' <center><input type="submit" value="Show" onclick=\'getAnnotationsPerGenome(\"'+annotation.genome.split('@')[0]
+                                    +'\", \"'+center+'\", \"'+annotation._id+'\");\'/></center>']);
+                        });
+                        $('#annotations-table').dataTable().fnAddData(data);
+                        $( "#progressbar" ).progressbar( "option", "value", 0 );    
+                    }
+
+                    else if (received_msg['header'] == 'project removed') {
+                            genomeBrowser.clear()
+                            current_project = undefined
+                            $('#annotations-table').dataTable().fnClearTable();
+                            $( "#progressbar" ).progressbar( "option", "value", 0 );
+                    }
+
+                    else if (received_msg['header'] == 'got annotations per genome') {
+                        if (received_msg['annotation_id'] && received_msg['center'])
+                            genomeBrowser.walkOnGenome(received_msg['center'], received_msg['annotation_id']);
+                        else
+                            genomeBrowser.walkOnGenome(genomeBrowser.getCurrentGenomicCenter()); //we simulate a walk on the same genomic center
+                    }
+
+                    else if (received_msg['header'] == 'got genome') {
+                        genomeBrowser.current_genome = received_msg['genome'];  
+                    }
+
+                    else if (received_msg['header'] == 'got new annotation to display') {
+                        genomeBrowser.displayAnnotation(received_msg['annotation']);
+                    }
+
+                };
+
+                var centerGenomeOn = function(center, annotationID) {
+                    genomeBrowser.walkOnGenome(parseInt(center), annotationID);
+                };
+
+                var createProject = function(ncbi_id, project_name) {
+                    $('#annotations-table').dataTable().fnClearTable();
+                    ws.send(JSON.stringify({
+                            'header': 'create project',
+                            'name': project_name,
+                            'ncbi_id': ncbi_id
+                        }));
+                    $( "#progressbar" ).progressbar( "option", "value", false );
+                };
+
+                var getAnnotationsPerGenome = function(genome_id, center, annotation_id) {
+                    if (genomeBrowser.genomeId != genome_id) {
+                        genomeBrowser.init(genome_id);
+                        ws.send(JSON.stringify({
+                            'header': 'get genome',
+                            'genome_id': genome_id
+                        }));
+                        ws.send(JSON.stringify({
+                            'header': 'get annotations per genome',
+                            'genome_id': genome_id,
+                            'center':  parseInt(center),
+                            'annotation_id': annotation_id
+                        }));
+                    } else {
+                        genomeBrowser.walkOnGenome(parseInt(center), annotation_id); 
+                    }
+                };
+
+                $(function() {
+
+                    $( "#tabs" ).tabs();
+                    $( "#menu" ).menu({  
+                        select: function( event, ui ) { 
+                            if (ui.item.attr("tag") == "create_new_project") {
+                                $( "#create-project" ).dialog( "open" );
+                            } else if (ui.item.attr("tag") == "choose_project") {
+                                ws.send(JSON.stringify({'header': 'get available projects'}));
+                            } else if (ui.item.attr("tag") == "add-data") {
+                                $( "#add-data" ).dialog( "open" );
+                            }  else if (ui.item.attr("tag") == "remove-project") {
+                                if (current_project != undefined) {
+                                    $( "#remove-project" ).dialog( "open" );
+                                } else
+                                    $( "#no-current-project" ).dialog( "open" );    
+                            }
+                        }
+                    });
+
+                    $( "#progressbar" ).progressbar( { value: 0 } );
+
+                    $( "input[type=submit], input[type=file], input[type=button], select" ).button();
+
+                    $('#annotations-table').dataTable({
+                        "bJQueryUI": true,
+                        "bDeferRender": true,
+                        "fnRowCallback": function( nRow, aData , iDisplayIndex, iDisplayIndexFull ) {
+                          return nRow
+                        }
+                    });
+
+                    $( "#create-project" ).dialog({
+                          autoOpen: false,
+                          height: 300,
+                          width: 350,
+                          modal: true,
+                          buttons: {
+                            "Create": function() {
+                                var project_name = $( "#project_name" ).val(),
+                                    ncbi_id = $( "#ncbi_id" ).val();
+
+                                createProject(ncbi_id, project_name);
+                                $( this ).dialog( "close" );  
+                            },
+                            Cancel: function() {
+                              $( this ).dialog( "close" );
+                            }
+                          }
+                    });
+
+                    $( "#choose-project" ).dialog({
+                          autoOpen: false,
+                          height: 200,
+                          width: 350,
+                          modal: true,
+                          buttons: {
+                            "Choose": function() {
+                                current_project = $( "#available_projects" ).val();
+                                $('#annotations-table').dataTable().fnClearTable();
+                                ws.send(JSON.stringify({
+                                    'header': 'get all annotations', 
+                                    'project': current_project
+                                }));
+                                $( this ).dialog( "close" ); 
+                                $( "#progressbar" ).progressbar( "option", "value", false );
+                            },
+                            Cancel: function() {
+                              $( this ).dialog( "close" );
+                            }
+                          }
+                    });
+
+                    $( "#add-data" ).dialog({
+                          autoOpen: false,
+                          height: 250,
+                          width: 350,
+                          modal: true,
+                          buttons: {
+                            "Add": function() {
+                                var ncbi_id = $( "#ncbi_id" ).val()
+                                ws.send(JSON.stringify({
+                                    'header': 'add data', 
+                                    'project': current_project,
+                                    'ncbi_id': ncbi_id
+                                }));
+                                $( this ).dialog( "close" ); 
+                                $( "#progressbar" ).progressbar( "option", "value", false );
+                            },
+                            Cancel: function() {
+                              $( this ).dialog( "close" );
+                            }
+                          }
+                    });
+
+                    $( "#remove-project" ).dialog({
+                          autoOpen: false,
+                          modal: true,
+                          buttons: {
+                            "Remove": function() {
+                                $('#annotations-table').dataTable().fnClearTable();
+                                ws.send(JSON.stringify({
+                                    'header': 'remove project', 
+                                    'project': current_project
+                                }));
+                                $( this ).dialog( "close" ); 
+                                $( "#progressbar" ).progressbar( "option", "value", false );
+                            },
+                            Cancel: function() {
+                              $( this ).dialog( "close" );
+                            }
+                          }
+                    });
+
+                    $( "#no-current-project" ).dialog({
+                          autoOpen: false,
+                          modal: true,
+                          buttons: {
+                            Ok: function() {
+                              $( this ).dialog( "close" );
+                            }
+                          }
+                    });
+
+                    $('.default-value').each(function() {
+                        var default_value = this.value;
+                        $(this).css('color', '#666');
+                        $(this).focus(function() {
+                            if(this.value == default_value) {
+                                this.value = '';
+                                $(this).css('color', '#333');
+                            }
+                        });
+                        $(this).blur(function() {
+                            if(this.value == '') {
+                                $(this).css('color', '#666');
+                                this.value = default_value;
+                            }
+                        });
+                    });
+
+                    //the genome browser
+                    genomeBrowser = new GenomeBrowser("genomeBrowser", ws, 1200, 500);                
+
+                    $('span#genomeBrowser').find('> svg,div').css({'border': '1px solid #000'});
+                });
+
+            } else {
+                console.log("WebSocket NOT supported by your Browser!");
+            }
+
+        </script>
+    </head>
+    <body>
+        <h1>Bacara: an asynchronous genome browser.</h1>
+        <div id="tabs">
+          <ul>
+            <li><a href="#home">Home</a></li>
+            <li><a href="#about">About</a></li>
+          </ul>
+            <div id="home">
+                <ul id="menu">
+                  <li tag="create_new_project"><a>Create new project...</a></li>
+                  <li tag="choose_project"><a>Choose project...</a>
+                  </li>
+                  <li tag="add-data"><a>Add data to current project...</a></li>
+                  <li tag="remove-project"><a>Remove current project...</a></li>
+                </ul>
+                <div class="browser">
+                    <span id="genomeBrowser">
+                    </span>
+                </div>
+                <div class="ui-progressbar ui-progressbar-indeterminate" id="progressbar" style="margin-bottom:20px;height: 20px; width:1200px;"></div>
+                <table id="annotations-table" class="display" width="100%">
+                    <thead>
+                        <tr>
+                            <th>Organism</th>
+                            <th>Genome name</th>
+                            <th>Class</th>
+                            <th>Product</th>
+                            <th>Start</th>
+                            <th>Strand</th>
+                            <th>Length</th>
+                            <th>Location</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                    </tbody>
+                </table>
+                
+                <!--<div class="details">
+                </div>
+                <div class="expression-files">
+                </div>
+                <div class="expression-levels">
+                </div>-->
+            </div>
+            <div id="about">
+                <div>
+                    <h2>Quickstart</h2>
+                    <p>
+                        To start playing with Bacara, click on "Create new project", choose a name for your project and a NCBI ID corresponding to a Genbank entry (like NC_000913.3 for the complete genome of Escherichia coli str. K-12 substr. MG1655).
+                    </p>
+                    <p>
+                        Once the genomic annotations loaded in the table, choose your favorite one and click on the button "Show" to display it in the genome browser.
+                    </p>
+                    <p>
+                        The toolbar of the genome browser allows you to:
+                            <ul style="list-style-type: none; margin:0px; padding:0px;">
+                                <li><span><svg height="32" version="1.1" width="32"><path fill="#333333" stroke="none" d="M24.316,5.318L6.684,15.5l17.632,10.182V5.318L24.316,5.318z"></path></svg></span>&nbsp;<span><svg height="32" version="1.1" width="32"><path fill="#333333" stroke="none" d="M6.684,25.682L24.316,15.5L6.684,5.318V25.682z"></path></svg>&nbsp;</span>do a small move along the genome</li>
+
+                                <li><span><svg height="32" version="1.1" width="32" xmlns="http://www.w3.org/2000/svg" style="overflow: hidden; position: relative; left: -0.015625px; top: -0.390625px;"><desc style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);">Created with Raphaël 2.1.2</desc><defs style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></defs><path fill="#333333" stroke="none" d="M5.5,15.499,15.8,21.447,15.8,15.846,25.5,21.447,25.5,9.552,15.8,15.152,15.8,9.552z" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path></svg>&nbsp;</span>&nbsp;<span><svg height="32" version="1.1" width="32" xmlns="http://www.w3.org/2000/svg" style="overflow: hidden; position: relative; left: -0.015625px; top: -0.390625px;"><desc style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);">Created with Raphaël 2.1.2</desc><defs style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></defs><path fill="#333333" stroke="none" d="M25.5,15.5,15.2,9.552,15.2,15.153,5.5,9.552,5.5,21.447,15.2,15.847,15.2,21.447z" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path></svg>&nbsp;</span>do a large move along the genome</li>
+
+                                <li><span><svg height="32" version="1.1" width="32" xmlns="http://www.w3.org/2000/svg" style="overflow: hidden; position: relative; left: -0.015625px; top: -0.390625px;"><desc style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);">Created with Raphaël 2.1.2</desc><defs style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></defs><path fill="#333333" stroke="none" d="M25.682,24.316L15.5,6.684L5.318,24.316H25.682z" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path></svg>&nbsp;</span>&nbsp;<span><svg height="32" version="1.1" width="32" xmlns="http://www.w3.org/2000/svg" style="overflow: hidden; position: relative; left: -0.015625px; top: -0.390625px;"><desc style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);">Created with Raphaël 2.1.2</desc><defs style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></defs><path fill="#333333" stroke="none" d="M5.318,6.684L15.5,24.316L25.682,6.684H5.318z" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path></svg>&nbsp;</span>move the annotations up and down</li>
+
+                                <li><span><svg height="32" version="1.1" width="32" xmlns="http://www.w3.org/2000/svg" style="overflow: hidden; position: relative; left: -0.015625px; top: -0.390625px;"><desc style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);">Created with Raphaël 2.1.2</desc><defs style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></defs><path fill="#333333" stroke="none" d="M22.646,19.307c0.96-1.583,1.523-3.435,1.524-5.421C24.169,8.093,19.478,3.401,13.688,3.399C7.897,3.401,3.204,8.093,3.204,13.885c0,5.789,4.693,10.481,10.484,10.481c1.987,0,3.839-0.563,5.422-1.523l7.128,7.127l3.535-3.537L22.646,19.307zM13.688,20.369c-3.582-0.008-6.478-2.904-6.484-6.484c0.006-3.582,2.903-6.478,6.484-6.486c3.579,0.008,6.478,2.904,6.484,6.486C20.165,17.465,17.267,20.361,13.688,20.369zM15.687,9.051h-4v2.833H8.854v4.001h2.833v2.833h4v-2.834h2.832v-3.999h-2.833V9.051z" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path></svg>&nbsp;</span>&nbsp;<span><svg height="32" version="1.1" width="32" xmlns="http://www.w3.org/2000/svg" style="overflow: hidden; position: relative; left: -0.015625px; top: -0.390625px;"><desc style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);">Created with Raphaël 2.1.2</desc><defs style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></defs><path fill="#333333" stroke="none" d="M22.646,19.307c0.96-1.583,1.523-3.435,1.524-5.421C24.169,8.093,19.478,3.401,13.688,3.399C7.897,3.401,3.204,8.093,3.204,13.885c0,5.789,4.693,10.481,10.484,10.481c1.987,0,3.839-0.563,5.422-1.523l7.128,7.127l3.535-3.537L22.646,19.307zM13.688,20.369c-3.582-0.008-6.478-2.904-6.484-6.484c0.006-3.582,2.903-6.478,6.484-6.486c3.579,0.008,6.478,2.904,6.484,6.486C20.165,17.465,17.267,20.361,13.688,20.369zM8.854,11.884v4.001l9.665-0.001v-3.999L8.854,11.884z" style="-webkit-tap-highlight-color: rgba(0, 0, 0, 0);"></path></svg>&nbsp;</span>zoom in and out</li>
+                            </ul>         
+                    </p>
+                    <h2>Credits</h2>
+                    <p>
+                    Bacara is based on:
+                        <ul>
+                            <li><a href="http://jquery.com/" target="_blank">jquery</a> and <a href="https://jqueryui.com/" target="_blank">jquery-ui</a></li>
+                            <li><a href="http://raphaeljs.com/" target="_blank">raphael.js</a></li>
+                            <li><a href="http://datatables.net/" target="_blank">DataTables</a></li>
+                            <li><a href="http://www.tornadoweb.org/" target="_blank">Tornado</a></li>
+                            <li><a href="http://goo.gl/z8qQSh" target="_blank">PyMongo</a></li>
+                            <li><a href="https://www.mongodb.org/" target="_blank">MongoDB</a></li>
+                            <li><a href="http://raphaeljs.com/icons/" target="_blank">icons from Dmitry Baranovskiy</a></li>
+                        </ul>
+                    </p>
+                    <h2>Contacts</h2>
+                    <p>
+                        You can follow me on <a href="http://twitter.com/fjossinet/" target="_blank">Twitter</a>.
+                    </p>
+                    <h2>Licence</h2>
+                    <pre>
+The MIT License
+
+Copyright (c) 2014 Fabrice Jossinet
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+                    </pre>
+                </div>
+        </div>
+        <div id="create-project" title="Create project">         
+          <form>
+          <fieldset>
+            <label for="project_name"><b>Name</b> (spaces will be removed)</label>
+            <input type="text" name="project_name" id="project_name" class="text ui-widget-content ui-corner-all default-value" value="My_favorite_project">
+            <label for="ncbi_id"><b>NCBI ID</b> (example: NC_000913.3)</label>
+            <input type="text" name="ncbi_id" id="ncbi_id" class="text ui-widget-content ui-corner-all default-value" value="NC_000913.3">
+          </fieldset>
+          </form>
+        </div>
+
+        <div id="add-data" title="Add data">         
+          <form>
+          <fieldset>
+            <label for="ncbi_id"><b>NCBI ID</b> (example: NC_000913.3)</label>
+            <input type="text" name="ncbi_id" id="ncbi_id" class="text ui-widget-content ui-corner-all default-value" value="NC_000913.3">
+          </fieldset>
+          </form>
+        </div>
+
+        <div id="choose-project" title="Choose project">         
+          <form>
+          <fieldset>
+            <select id="available_projects"></select>  
+          </fieldset>
+          </form>
+        </div>
+
+        <div id="remove-project" title="Remove current project">
+            <p>
+                <span class="ui-icon ui-icon-alert" style="float:left; margin:0 7px 50px 0;"></span>Are you sure?
+            </p>    
+        </div>
+
+        <div id="no-current-project" title="Remove current project">
+            <p>
+                <span class="ui-icon ui-icon-alert" style="float:left; margin:0 7px 50px 0;"></span>No project opened!
+            </p>
+        </div>
+    </body>
+</html>
+
