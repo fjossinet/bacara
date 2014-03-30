@@ -11,6 +11,7 @@ To use Bacara, you will need:
 * [PyMongo](http://goo.gl/z8qQSh)
 * a browser supporting WebSockets (like Google Chrome or Safari)
 
+To launch Bacara, follow these steps:
 * Step 1: clone this repository,
 * Step 2: start your MongoDB,
 * Step 3: from the Bacara folder, launch the script "server.py". This will open automatically your web browser.
