@@ -3,7 +3,7 @@ Bacara: an asynchronous Genome Browser
 
 ![Bacara screenshot](/static/images/screenshot.png)
 
-Bacara is a genome browser based on [Raphaël](http://raphaeljs.com), [JQuery](), [MongoDB](https://www.mongodb.org/), [Tornado](http://www.tornadoweb.org/) and Websockets.
+Bacara is a genome browser based on [Raphaël](http://raphaeljs.com), [JQuery](http://jquery.com), [MongoDB](https://www.mongodb.org/), [Tornado](http://www.tornadoweb.org/) and Websockets.
 
 To use Bacara, you will need:
 * [MongoDB](https://www.mongodb.org/)
